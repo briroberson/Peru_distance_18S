@@ -29,7 +29,7 @@ library(patchwork)
 
 ### 1a. Metadata and elevation
 #the metadata
-metadata<-readr::read_tsv("F:\\Research\\Dec24_18S\\peru-dec24-metadata18S.tsv")
+metadata<-readr::read_tsv("peru-dec24-metadata18S.tsv")
 
 # make distance a factor
 metadata$distance<- as.factor(metadata$distance)
@@ -41,9 +41,9 @@ metadata$distance<- as.factor(metadata$distance)
 # Load Other Data ----
 
 #load it into a phyloseq object
-phy <- qza_to_phyloseq("F:\\Research\\Dec24_18S\\PeruDec24_18s_table.qza", 
-                       "F:\\Research\\Dec24_18S\\PeruDec24_18S_rooted-tree.qza", 
-                       "F:\\Research\\Dec24_18S\\PeruDec24_18S_taxonomy.qza")
+phy <- qza_to_phyloseq("PeruDec24_18s_table.qza", 
+                       "PeruDec24_18S_rooted-tree.qza", 
+                       "PeruDec24_18S_taxonomy.qza")
 
 #add the metadata to the phyloseq because for some reason I couldn't load it directly
 #order the samples in the metadata to match the order of samples in phyloseq
@@ -210,7 +210,7 @@ saveRDS(filt_rare_phy, file="D:\\Soil\\Dec24_18S\\filt_rare_phy_18s.rds") #use w
 
 
 ##### ----
-filt_rare_phy<-readRDS("F:\\Research\\Dec24_18S\\filt_rare_phy_18s_low.rds")
+filt_rare_phy<-readRDS("filt_rare_phy_18s_low.rds")
 
 #order metadata to match phyloseq
 metadata<-metadata[ order(match(metadata$sampleID, colnames(filt_rare_phy@otu_table))), ]
@@ -292,6 +292,23 @@ permanova_veg
 
 #pairwise permanova 
 permanova_pairwise(distance(filt_rare_phy, method='wunifrac'), grp=metadata_filt$type_ins, padj='holm')
+
+
+## Permanova with separate 1 & 2 groups 
+metadata_filt_grouped <- metadata_filt %>%
+  mutate(group = case_when(
+    type == "veg_patch" ~ "veg_patch",
+    type == "latrine" & distance == 1 ~ "1",
+    type == "latrine" & distance == 2 ~ "2",
+    type == "latrine" & distance %in% 3:6 ~ "outside",
+    TRUE ~ NA_character_ ))
+metadata_filt_grouped$group <- as.factor(metadata_filt_grouped$group)
+
+permanova_grouped<- adonis2(distance(filt_rare_phy, method='wunifrac')~group, data=metadata_filt_grouped, by='terms')
+permanova_grouped
+
+#pairwise permanova 
+permanova_pairwise(distance(filt_rare_phy, method='wunifrac'), grp=metadata_filt_grouped$group, padj='holm')
 
 
 #### PCOA ----
@@ -380,6 +397,154 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
     axis.text.y = element_text(size = 16),
     axis.title.x = element_text(size = 18, face = "bold",color = "black"),
     plot.margin = unit(c(0.1,0.1,0,0.1),"cm"))
+
+
+# Simper ----
+
+# run simper for Distance----
+simper_dis<- simper(tasvLat, metadata_lat$distance)
+simper_dis
+
+#see the top 20
+s_dis<- summary(simper_dis)
+top10_1_2<-head(s_dis$`1_2`, n = 10)
+top10_1_3<-head(s_dis$`1_3`, n = 10)
+top10_1_4<-head(s_dis$`1_4`, n = 10)
+top10_1_5<-head(s_dis$`1_5`, n = 10)
+
+simpdis_asv1_2<- row.names(top10_1_2)
+simpdis_asv1_3<- row.names(top10_1_3)
+simpdis_asv1_4<- row.names(top10_1_4)
+simpdis_asv1_5<- row.names(top10_1_5)
+
+#get actual taxa info
+taxa_dis <- as.data.frame(tax_table(filt_phy_lat)) #taxonomy
+simper1_2_taxa<-taxa_dis[row.names(taxa_dis) %in% simpdis_asv1_2,]
+simper1_3_taxa<-taxa_dis[row.names(taxa_dis) %in% simpdis_asv1_3,]
+simper1_4_taxa<-taxa_dis[row.names(taxa_dis) %in% simpdis_asv1_4,]
+simper1_5_taxa<-taxa_dis[row.names(taxa_dis) %in% simpdis_asv1_5,]
+
+
+# run simper on Inside/Outside----
+simper_ins<- simper(tasvLat, metadata_lat$inside)
+simper_ins
+
+#see the top 20
+s_ins<- summary(simper_ins)
+top10_ins<-head(s_ins$inside_outside, n = 10)
+
+simpdis_asv_ins<- row.names(top10_ins)
+
+#get actual taxa info
+simper_ins_taxa<-taxa_dis[row.names(taxa_dis) %in% simpdis_asv_ins,]
+
+
+# run simper on 3 categories----
+simper_veg<- simper(tasvAll, metadata_filt$type_ins)
+simper_veg
+
+#see the top 20
+s_veg<- summary(simper_veg)
+top10_veg_insL<-head(s_veg$latrine_inside_veg_patch_inside, n = 10)
+top10_veg_ousL<-head(s_veg$latrine_outside_veg_patch_inside, n = 10)
+top10_insL_ousL<-head(s_veg$latrine_inside_latrine_outside, n = 10)
+
+simp_asv_veg_insL<- row.names(top10_veg_insL)
+simp_asv_veg_ousL<- row.names(top10_veg_ousL)
+simp_asv_insL_ousL<- row.names(top10_insL_ousL)
+
+#get actual taxa info
+simper_veg_insL_taxa<-taxa_dis[row.names(taxa_dis) %in% simp_asv_veg_insL,]
+simper_veg_ousL_taxa<-taxa_dis[row.names(taxa_dis) %in% simp_asv_veg_ousL,]
+simper_insL_ousL_taxa<-taxa_dis[row.names(taxa_dis) %in% simp_asv_insL_ousL,]
+
+
+###pcoa with simper labels 
+
+#function to get lowest identified taxa 
+bad_terms <- c(
+  "Streptophyta_X", "Embryophyceae_XX", "Embryophyceae_X", "Chromadorea_X")
+
+
+get_lowest_tax <- function(x) {
+  x <- as.character(x)
+  
+  for (i in rev(seq_along(x))) {
+    if (!is.na(x[i]) &&
+        x[i] != "" &&
+        !any(sapply(bad_terms, function(b) grepl(b, x[i], ignore.case = TRUE)))) {
+      return(x[i])
+    }
+  }
+  return(NA)
+}
+
+tax_cols <- c("Kingdom","Phylum","Class","Order","Family","Genus","Species")
+taxa_dis$label <- apply(
+  taxa_dis[, tax_cols],
+  1,
+  get_lowest_tax)
+
+
+## for veg and latrine
+#get asv table and transpose for all samples
+asvAll<- as.data.frame(otu_table(filt_rare_phy))
+tasvAll <- data.frame(t(asvAll), check.names = F)
+
+#calculate the pcoa
+pcoaAll<-cmdscale(d=distance(filt_rare_phy, method='wunifrac'), eig=T)
+#add the scores to the metadata
+metadata_filt$axis01<- vegan::scores(pcoaAll)[,1]
+metadata_filt$axis02<- vegan::scores(pcoaAll)[,2]
+
+#retrieve species scores for it
+spscorAll<-as.data.frame(wascores(x = pcoaAll$points, w = tasvAll))
+spscorAll$ASV <- rownames(spscorAll)
+
+spscorAll <- merge(spscorAll, taxa_dis[, "label", drop = FALSE],
+                   by = "row.names", all.x = TRUE)
+rownames(spscorAll) <- spscorAll$Row.names
+
+veg_insL_df  <- spscorAll[spscorAll$ASV %in% simp_asv_veg_insL, ]
+veg_ousL_df  <- spscorAll[spscorAll$ASV %in% simp_asv_veg_ousL, ]
+insL_ousL_df <- spscorAll[spscorAll$ASV %in% simp_asv_insL_ousL, ]
+
+#use this function to calculate the hulls
+find_hull <- function(df) df[chull(df$axis01, df$axis02),]
+micro.hulls <- ddply(metadata_filt, "type_ins", find_hull)
+
+#plot it 
+ggplot(metadata_filt, aes(axis01, axis02)) +
+  geom_polygon(data = micro.hulls, 
+               aes(colour = type_ins, fill = type_ins), alpha = 0.1, show.legend = F) +
+  geom_point(size = 3, aes(colour = type_ins)) +
+  scale_color_manual(labels=c('Inside Latrine','Vegetation Patch','Outside Latrine'),
+                     values=c('purple1','#74e374', 'cyan2'))+
+  xlab("PCoA 1") +
+  ylab("PCoA 2") +
+  ggtitle("(b)") + 
+  geom_text_repel(data = veg_insL_df,
+                  aes(x = V1, y = V2, label = label),
+                  size = 5, color = "black") +
+  geom_text_repel(data = veg_ousL_df,
+                  aes(x = V1, y = V2, label = label),
+                  size = 5, color = "black") +
+  geom_text_repel(data = insL_ousL_df,
+                  aes(x = V1, y = V2, label = label),
+                  size = 5, color = "black") +
+  labs(color = NULL, fill = NULL) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 16, hjust = 0.5),
+    axis.title.y = element_text(face="bold", size = 18), 
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold",color = "black"),
+    plot.margin = unit(c(0.1,0.1,0,0.1),"cm"))
+
+
+
+
+
 
 
 ##### Differential Abundance ----

@@ -474,13 +474,12 @@ simper.results <- purrr::map_dfr(comparisons, function(comp) {
 
 #filter for significant 
 sig_asvs_veg <- simper.results %>%
-  filter(p <= 0.05) %>%
-  dplyr::select(ASV, average, Comparison, Position)
+  filter(p <= 0.05) 
 
 #create a df of significant ASVs with taxonomy 
 taxaveg <- as.data.frame(tax_table(filt_rare_phy)) %>%
   tibble::rownames_to_column("ASV")
-simper_taxaveg <- simper.results %>%
+simper_taxaveg <- sig_asvs_veg %>%
   left_join(taxaveg, by = c("ASV" = "ASV"))
 #grab top 10 only 
 simper_taxaveg_top10 <- simper_taxaveg %>%

@@ -563,6 +563,19 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
     axis.title.x = element_text(size = 18, face = "bold",color = "black"),
     plot.margin = unit(c(0.1,0.1,0,0.1),"cm"))
 
+###export these taxa to BLAST
+
+#read in sequences 
+rep_seqs <- read_qza("PeruDec24_18s_rep-seqs.qza")$data
+seq_df <- data.frame(
+  ASV = names(rep_seqs),
+  Sequence = as.character(rep_seqs),
+  stringsAsFactors = FALSE)
+
+taxaveg_top10_blast_18s <- simper_taxaveg_top10 %>%
+  left_join(seq_df, by = "ASV")
+
+write.csv(taxaveg_top10_blast_16s, "taxaveg_top10_blast_18s") 
 
 
 

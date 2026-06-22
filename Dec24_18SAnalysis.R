@@ -574,7 +574,7 @@ seq_df <- data.frame(
 taxaveg_top10_blast_18s <- simper_taxaveg_top10 %>%
   left_join(seq_df, by = "ASV")
 
-write.csv(taxaveg_top10_blast_16s, "taxaveg_top10_blast_18s.csv") 
+write.csv(taxaveg_top10_blast_18s, "taxaveg_top10_blast_18s.csv") 
 
 
 

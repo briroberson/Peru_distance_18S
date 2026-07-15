@@ -482,12 +482,15 @@ taxaveg <- as.data.frame(tax_table(filt_rare_phy)) %>%
 simper_taxaveg <- sig_asvs_veg %>%
   left_join(taxaveg, by = c("ASV" = "ASV"))
 #grab top 10 only 
-simper_taxaveg_top10 <- simper_taxaveg %>%
+simper_taxaveg_top5 <- simper_taxaveg %>%
   group_by(Comparison) %>%
   arrange(desc(average)) %>%
-  slice_head(n = 10) %>%
+  slice_head(n = 5) %>%
   ungroup()
 write.csv(simper_taxaveg_top10, "18S_simper_veg_top10.csv", row.names = FALSE)
+saveRDS(simper_taxaveg_top5, file = "18s_simper_taxaveg_top5.rds")
+simper_taxaveg_top5 <- readRDS("18s_simper_taxaveg_top5.rds")
+
 
 
 ###pcoa with simper labels 
@@ -507,15 +510,15 @@ metadata_filt$axis02<- vegan::scores(pcoaAll)[,2]
 spscorAll<-as.data.frame(wascores(x = pcoaAll$points, w = tasvAll))
 #subset to top 10 significant asvs from simper to plot 
 spscorAll$ASV <- rownames(spscorAll)
-spscorAll_top10 <- spscorAll %>%
-  dplyr::filter(ASV %in% simper_taxaveg_top10$species)
+spscorAll_top5 <- spscorAll %>%
+  dplyr::filter(ASV %in% simper_taxaveg_top5$species)
 #add taxonomy 
 tax_df <- as.data.frame(phyloseq::tax_table(filt_rare_phy)) %>%
   tibble::rownames_to_column("ASV")
-spscorAll_top10 <- spscorAll_top10 %>%
+spscorAll_top5 <- spscorAll_top5 %>%
   dplyr::left_join(tax_df, by = "ASV")
 #select lowest assigned taxonomy
-spscorAll_top10 <- spscorAll_top10 %>%
+spscorAll_top5 <- spscorAll_top5 %>%
   mutate(
     tax_label = case_when(
       !is.na(Species) & Species != "" &
@@ -533,34 +536,57 @@ spscorAll_top10 <- spscorAll_top10 %>%
 #use this function to calculate the hulls
 find_hull <- function(df) df[chull(df$axis01, df$axis02),]
 micro.hulls <- ddply(metadata_filt, "type_ins", find_hull)
+#var explained labels 
+var_exp <- round(100 * pcoaAll$eig / sum(pcoaAll$eig[pcoaAll$eig > 0]), 1)
 
 #plot it 
 ggplot(metadata_filt, aes(axis01, axis02)) +
   geom_polygon(data = micro.hulls, 
-               aes(colour = type_ins, fill = type_ins), alpha = 0.1, show.legend = F) +
+               aes(colour = type_ins, fill = type_ins), alpha = 0.4, linejoin = "round", show.legend = F) +
   geom_point(size = 3, aes(colour = type_ins)) +
   scale_color_manual(labels=c('Inside Latrine','Vegetation Patch','Outside Latrine'),
-                     values=c('purple1','#74e374', 'cyan2'))+
-  geom_segment(aes(x=0, xend=V1, y=0, yend=V2), data=spscorAll_top10, arrow=arrow())+
+                     values=c("#9C6EB0","#4ACD66", "#4DD7CE")) + 
+  scale_fill_manual(labels=c('Inside Latrine','Vegetation Patch','Outside Latrine'),
+                    values=c("#9C6EB0","#4ACD66", "#4DD7CE")) + 
+  geom_segment(aes(x=0, xend=V1, y=0, yend=V2), data=spscorAll_top5, arrow=arrow())+
   ggrepel::geom_text_repel(
-    data = spscorAll_top10,
+    data = spscorAll_top5,
     aes(V1, V2, label = tax_label),
     size = 3,
     max.overlaps = Inf,
     box.padding = 0.4,
     point.padding = 0.3,
-    segment.color = "grey50") + 
-  xlab("PCoA 1") +
-  ylab("PCoA 2") +
+    segment.color = "grey50")  + 
+  xlab(paste0("PCoA 1 (", var_exp[1], "%)")) +
+  ylab(paste0("PCoA 2 (", var_exp[2], "%)")) + 
   ggtitle("(b)") + 
   labs(color = NULL, fill = NULL) +
-  theme_bw() +
+  theme_bw()  +
   theme(
+    panel.border = element_blank(),
+    axis.line = element_line(colour = "black") , 
     plot.title = element_text(size = 16, hjust = 0.5),
     axis.title.y = element_text(face="bold", size = 18), 
     axis.text.y = element_text(size = 16),
     axis.title.x = element_text(size = 18, face = "bold",color = "black"),
-    plot.margin = unit(c(0.1,0.1,0,0.1),"cm"))
+    plot.margin = unit(c(0.1,0.1,0,0.1),"cm") ,
+    legend.position = "bottom",
+    legend.text = element_text(size = 14, face = "bold"),
+    legend.title = element_text(size = 15, face = "bold"),
+    legend.key.width = unit(0.4, "cm"),
+    legend.key.height = unit(0.7, "cm"),
+    legend.spacing.y = unit(0.5, "cm"),
+    legend.background = element_rect(
+      colour = "black",
+      fill = "white",
+      linewidth = 0.5),
+    legend.key = element_rect(
+      colour = "black",
+      fill = "white" )) +
+  guides(
+    colour = guide_legend(override.aes = list(size = 2.75)),
+    fill = guide_legend(ncol = 3, override.aes = list(alpha = 1))) + 
+  theme(legend.position = "none")
 
 ###export these taxa to BLAST
 

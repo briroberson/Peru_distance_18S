@@ -558,14 +558,14 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
     point.padding = 0.3,
     segment.color = "grey50")  + 
   xlab(paste0("PCoA 1 (", var_exp[1], "%)")) +
-  ylab(paste0("PCoA 2 (", var_exp[2], "%)")) + 
-  ggtitle("(b)") + 
-  labs(color = NULL, fill = NULL) +
+  ylab(paste0("PCoA 2 (", var_exp[2], "%)")) +
+  ggtitle("18S Beta Diversity") + 
+  labs(color = NULL, fill = NULL) + 
   theme_bw()  +
   theme(
     panel.border = element_blank(),
     axis.line = element_line(colour = "black") , 
-    plot.title = element_text(size = 16, hjust = 0.5),
+    plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
     axis.title.y = element_text(face="bold", size = 18), 
     axis.text.y = element_text(size = 16),
     axis.title.x = element_text(size = 18, face = "bold",color = "black"),
@@ -585,8 +585,14 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
       fill = "white" )) +
   guides(
     colour = guide_legend(override.aes = list(size = 2.75)),
-    fill = guide_legend(ncol = 3, override.aes = list(alpha = 1))) + 
-  theme(legend.position = "none")
+    fill = guide_legend(ncol = 3, override.aes = list(alpha = 1))) +
+  labs(tag = "(b)") +
+  theme(
+    plot.tag = element_text(face = "bold", size = 18),
+    plot.tag.position = c(0.02, 0.98) )
+
+#export 1000 x 700
+
 
 ###export these taxa to BLAST
 

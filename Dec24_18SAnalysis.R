@@ -21,6 +21,18 @@ library(ANCOMBC)
 library(ggrepel)
 library(patchwork)
 
+# plotting theme
+
+theme<-theme(plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
+             axis.title.y = element_text(face="bold", size = 18, margin = margin(r = 10)), 
+             axis.text.x = element_text(size = 16),
+             axis.text.y = element_text(size = 16),
+             axis.title.x = element_text(size = 18, face = "bold",color = "black"),
+             plot.margin = unit(c(0.1,0.1,0,0.1),"cm") ,
+             strip.text = element_text(face = "bold", size = 16), 
+             legend.position = "none")
+
+dist_cols <- colorRampPalette(c("#9C6EB0", "cyan3"))(6)
 
 # Load Metadata ----
 
@@ -209,7 +221,7 @@ filt_rare_phy<- mirl_phyloseq
 saveRDS(filt_rare_phy, file="D:\\Soil\\Dec24_18S\\filt_rare_phy_18s.rds") #use whatever file path for where you want to save it
 
 
-##### ----
+##### Read in FINAL phyloseq----
 filt_rare_phy<-readRDS("filt_rare_phy_18s_low.rds")
 
 #order metadata to match phyloseq
@@ -218,21 +230,191 @@ metadata<-metadata[ order(match(metadata$sampleID, colnames(filt_rare_phy@otu_ta
 
 
 
-#### filter metadata to match phyloseq
+#### Alpha diversity 
 #calculate shannon diversity
-all_shan_div<-estimate_richness(filt_rare_phy, measures='Shannon')
+#all_shan_div<-estimate_richness(filt_rare_phy, measures='Shannon')
 #add sample ID as column for the left join
-all_shan_div$sampleID<- row.names(all_shan_div)
+#all_shan_div$sampleID<- row.names(all_shan_div)
 
 #merge with the metadata so we can run a model and filter out the stuff already filtered out
-metadata_filt<- metadata %>% 
-  left_join(all_shan_div, by='sampleID') %>% 
-  filter(!is.na(Shannon))
+#metadata_filt<- metadata %>% 
+#  left_join(all_shan_div, by='sampleID') %>% 
+#  filter(!is.na(Shannon))
 
-metadata_filt<- metadata_filt %>% 
+
+
+
+# richness using specnumber() for non-integer counts from mirlyn rarefaction
+otu_mat <- as(otu_table(filt_rare_phy), "matrix") 
+if(taxa_are_rows(filt_rare_phy)) {otu_mat <- t(otu_mat)} #transpose
+
+richness <- specnumber(otu_mat) #calculate richness
+sample_ids <- sample_names(filt_rare_phy) #grab samp IDs
+all_richness <- data.frame(`sampleID` = sample_ids, Observed = richness)
+
+# merge with metadata
+metadata_filt <- metadata %>% 
+  left_join(all_richness, by='sampleID') %>%
+  filter(!is.na(Observed))
+
+#add elevation and format columns 
+latrine_elevation <- read.csv("latrine_elevation.csv") %>%
+  dplyr::select(latrine, elevation) %>%
+  distinct(latrine, .keep_all = TRUE)
+
+metadata_filt <- metadata_filt %>% 
   mutate(type=ifelse(grepl('L', latrine), 'latrine','veg_patch')) %>% 
   mutate(inside=ifelse(distance %in% c(1,2), 'inside', 'outside')) %>% 
-  mutate(type_ins=paste(type, inside, sep='_'))
+  mutate(type_ins=paste(type, inside, sep='_')) %>%
+  left_join(latrine_elevation, by = "latrine")
+  
+
+### Elevation models for manuscript
+
+## Distance 
+metadata_dist <- 
+  metadata_filt %>%
+  filter(
+    type == 'latrine'
+  ) %>%
+  mutate(
+    elevation_sc = 
+      scale(elevation)
+  ) %>% 
+  mutate(
+    dis_name = recode_factor(distance, '1'='Latrine center','2'='Latrine edge','3'='0.5m', '4'='1m', '5'='2m','6'='4m')) 
+
+m_rich_dis <- lmer(Observed ~ distance + (1 | latrine), data = metadata_dist)
+summary(m_rich_dis)
+Anova(m_rich_dis)
+
+m_rich_dis_elev_add <- lmer(Observed ~ distance + elevation_sc + (1 | latrine), data = metadata_dist, REML = FALSE)
+summary(m_rich_dis_elev_add)
+Anova(m_rich_dis_elev_add)
+
+m_rich_dis_elev <- lmer(Observed ~ distance * elevation_sc + (1 | latrine), data = metadata_dist)
+summary(m_rich_dis_elev)
+Anova(m_rich_dis_elev)
+
+ICtab(m_rich_dis, m_rich_dis_elev_add, m_rich_dis_elev)
+
+# plot for manuscript 
+ggplot(metadata_dist, aes(x = dis_name, y = Observed)) +
+  geom_boxplot(
+    aes(fill = dis_name),
+    outliers = FALSE
+  ) +
+  geom_point(
+    color = "black",
+    alpha = 0.5,
+    size = 3,
+    position = position_jitter(width = 0.1, height = 0)
+  ) +
+  scale_fill_manual(values = dist_cols, guide = "none") +
+  labs(
+    x = NULL,
+    y = "Eukaryote ASV richness",
+    tag = "(b)"
+  ) +
+  theme_bw() +
+  theme +
+  theme(
+    plot.tag = element_text(face = "bold", size = 18),
+    plot.tag.position = c(0.01, 0.98),
+    legend.position = "none")
+
+
+
+### Elevation models for manuscript
+metadata_filt <-
+  metadata_filt %>%
+  mutate(
+    elevation_sc = 
+      scale(elevation)
+  ) 
+
+m_rich_veg <- lmer(Observed ~ type_ins + (1 | latrine), data = metadata_filt)
+summary(m_rich_veg)
+Anova(m_rich_veg)
+
+m_rich_veg_elev_add <- lmer(Observed ~ type_ins + elevation_sc + (1 | latrine), data = metadata_filt, REML = FALSE)
+summary(m_rich_veg_elev_add)
+Anova(m_rich_veg_elev_add)
+
+m_rich_veg_elev <- lmer(Observed ~ type_ins * elevation_sc + (1 | latrine), data = metadata_filt)
+summary(m_rich_veg_elev)
+Anova(m_rich_veg_elev)
+
+ICtab(m_rich_dis, m_rich_dis_elev_add, m_rich_dis_elev)
+
+# plot for manuscript 
+ggplot(metadata_filt, aes(type_ins, Observed)) +
+  geom_boxplot(
+    aes(fill = type_ins),
+    outliers = FALSE
+  ) +
+  geom_point(
+    color = "black",
+    alpha = 0.5,
+    size = 3,
+    position = position_jitter(width = 0.1, height = 0)
+  ) +
+  labs(
+    x = NULL,
+    y = "Eukaryote ASV richness",
+    tag = "(b)"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "latrine_inside" = "#9C6EB0",
+      "veg_patch_inside" = "#4ACD66",
+      "latrine_outside" = "#4DD7CE"
+    ),
+    guide = "none"
+  ) +
+  scale_x_discrete(
+    labels = c(
+      "latrine_inside" = "Inside Latrine",
+      "veg_patch_inside" = "Vegetation Patch",
+      "latrine_outside" = "Outside Latrine"
+    )
+  ) +
+  theme_bw() +
+  theme +
+  theme(
+    plot.tag = element_text(face = "bold", size = 18),
+    plot.tag.position = c(0.01, 0.98),
+    legend.position = "none"
+  )
+
+ggplot(metadata_filt, aes(x = elevation, y = Observed, color = type_ins)) +
+  geom_point(alpha = 0.5, size = 3) +
+  geom_smooth(method = "lm", se = FALSE, linewidth = 1) +
+  labs(
+    x = "Elevation (m)",
+    y = "Eukaryote ASV richness",
+    color = NULL,
+    tag = "(c)"
+  ) +
+  scale_color_manual(
+    values = c(
+      "latrine_inside" = "#9C6EB0",
+      "veg_patch_inside" = "#4ACD66",
+      "latrine_outside" = "#4DD7CE"
+    ),
+    labels = c(
+      "latrine_inside" = "Inside Latrine",
+      "veg_patch_inside" = "Vegetation Patch",
+      "latrine_outside" = "Outside Latrine"
+    )
+  ) +
+  theme_bw() +
+  theme +
+  theme(
+    plot.tag = element_text(face = "bold", size = 18),
+    plot.tag.position = c(0.01, 0.98),
+    legend.position = "right"
+  )
 
 
 ######### Beta diveristy
@@ -481,12 +663,19 @@ taxaveg <- as.data.frame(tax_table(filt_rare_phy)) %>%
   tibble::rownames_to_column("ASV")
 simper_taxaveg <- sig_asvs_veg %>%
   left_join(taxaveg, by = c("ASV" = "ASV"))
-#grab top 10 only 
-simper_taxaveg_top5 <- simper_taxaveg %>%
-  group_by(Comparison) %>%
+
+#grab top 10 overall only (choosing max avg within ASVs)
+simper_taxaveg_top10all <- simper_taxaveg %>%
+  group_by(ASV) %>%
+  slice_max(
+    order_by = average,
+    n = 1,
+    with_ties = FALSE
+  ) %>%
+  ungroup() %>%
   arrange(desc(average)) %>%
-  slice_head(n = 5) %>%
-  ungroup()
+  slice_head(n = 10) 
+
 write.csv(simper_taxaveg_top10, "18S_simper_veg_top10.csv", row.names = FALSE)
 saveRDS(simper_taxaveg_top5, file = "18s_simper_taxaveg_top5.rds")
 simper_taxaveg_top5 <- readRDS("18s_simper_taxaveg_top5.rds")
@@ -510,15 +699,15 @@ metadata_filt$axis02<- vegan::scores(pcoaAll)[,2]
 spscorAll<-as.data.frame(wascores(x = pcoaAll$points, w = tasvAll))
 #subset to top 10 significant asvs from simper to plot 
 spscorAll$ASV <- rownames(spscorAll)
-spscorAll_top5 <- spscorAll %>%
-  dplyr::filter(ASV %in% simper_taxaveg_top5$species)
+spscorAll_top10 <- spscorAll %>%
+  dplyr::filter(ASV %in% simper_taxaveg_top10all$species)
 #add taxonomy 
 tax_df <- as.data.frame(phyloseq::tax_table(filt_rare_phy)) %>%
   tibble::rownames_to_column("ASV")
-spscorAll_top5 <- spscorAll_top5 %>%
+spscorAll_top10 <- spscorAll_top10 %>%
   dplyr::left_join(tax_df, by = "ASV")
 #select lowest assigned taxonomy
-spscorAll_top5 <- spscorAll_top5 %>%
+spscorAll_top10 <- spscorAll_top10all %>%
   mutate(
     tax_label = case_when(
       !is.na(Species) & Species != "" &
@@ -548,17 +737,17 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
                      values=c("#9C6EB0","#4ACD66", "#4DD7CE")) + 
   scale_fill_manual(labels=c('Inside Latrine','Vegetation Patch','Outside Latrine'),
                     values=c("#9C6EB0","#4ACD66", "#4DD7CE")) + 
-  geom_segment(aes(x=0, xend=V1, y=0, yend=V2), data=spscorAll_top5, arrow=arrow())+
+  geom_segment(aes(x=0, xend=V1, y=0, yend=V2), data=spscorAll_top10, arrow=arrow())+
   ggrepel::geom_text_repel(
-    data = spscorAll_top5,
+    data = spscorAll_top10,
     aes(V1, V2, label = tax_label),
-    size = 3,
+    size = 6,
     max.overlaps = Inf,
-    box.padding = 0.4,
-    point.padding = 0.3,
-    segment.color = "grey50")  + 
+    box.padding = 0.5,
+    point.padding = 0.5,
+    segment.color = NA)  + 
   xlab(paste0("PCoA 1 (", var_exp[1], "%)")) +
-  ylab(paste0("PCoA 2 (", var_exp[2], "%)")) +
+  ylab(paste0("PCoA 2 (", var_exp[2], "%)")) + 
   ggtitle("18S Beta Diversity") + 
   labs(color = NULL, fill = NULL) + 
   theme_bw()  +
@@ -567,6 +756,7 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
     axis.line = element_line(colour = "black") , 
     plot.title = element_text(size = 18, hjust = 0.5, face = "bold"),
     axis.title.y = element_text(face="bold", size = 18), 
+    axis.text.x = element_text(size = 16),
     axis.text.y = element_text(size = 16),
     axis.title.x = element_text(size = 18, face = "bold",color = "black"),
     plot.margin = unit(c(0.1,0.1,0,0.1),"cm") ,
@@ -589,7 +779,8 @@ ggplot(metadata_filt, aes(axis01, axis02)) +
   labs(tag = "(b)") +
   theme(
     plot.tag = element_text(face = "bold", size = 18),
-    plot.tag.position = c(0.02, 0.98) )
+    plot.tag.position = c(0.02, 0.98))
+
 
 #export 1000 x 700
 
@@ -603,10 +794,22 @@ seq_df <- data.frame(
   Sequence = as.character(rep_seqs),
   stringsAsFactors = FALSE)
 
-taxaveg_top10_blast_18s <- simper_taxaveg_top10 %>%
-  left_join(seq_df, by = "ASV")
+# Extract PCoA axis scores for each ASV
+axis_df <- spscorAll %>%
+  dplyr::select(ASV, axis01 = V1, axis02 = V2)
 
-write.csv(taxaveg_top10_blast_18s, "taxaveg_top10_blast_18s.csv") 
+# Join sequences and PCoA axis scores
+taxaveg_top10_blast_18s <- simper_taxaveg_top10all %>%
+  left_join(seq_df, by = "ASV") %>%
+  left_join(axis_df, by = "ASV")
+
+# Export
+write.csv(
+  taxaveg_top10_blast_18s,
+  "taxaveg_blast_18s_TOP10_OVERALL.csv",
+  row.names = FALSE
+)
+
 
 
 
